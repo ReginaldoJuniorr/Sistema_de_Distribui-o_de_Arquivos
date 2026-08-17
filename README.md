@@ -21,22 +21,29 @@ Módulos nativos: socket, json, os, platform, datetime
 ## 📂 Arquitetura do Projeto
 
 ├── servidor.py    # Aplicação do servidor (listening & geração de arquivos)
+
 ├── cliente.py     # Aplicação do cliente (interface & download)
+
 ├── .gitignore     # Filtro para não versionar arquivos temporários
+
 └── README.md      # Documentação do projeto
 
 ## 🔄 Como Funciona o Protocolo
 
-[Cliente]                                              [Servidor]
-   |                                                        |
-   | --- 1. Envia comando: "relatório" -------------------> |
-   |                                                        | (Gera relatório .txt)
-   | <--- 2. Envia Header JSON (Exatos 1024 Bytes) -------- | (Status, Nome e Tamanho)
-   |                                                        |
-   | <--- 3. Envia Arquivo em Chunks (Blocos de 4 KB) ----- |
-   |                                                        |
-[Salva o arquivo localmente]
-
+```text
++-----------+                                         +------------+
+|  Cliente  |                                         |  Servidor  |
++-----------+                                         +------------+
+      |                                                     |
+      | ------ 1. Envia comando: "relatório" -------------> |
+      |                                                     | (Gera relatório .txt)
+      | <----- 2. Envia Header JSON (Exatos 1024 Bytes) --- | (Status, Nome e Tamanho)
+      |                                                     |
+      | <----- 3. Envia Arquivo em Chunks (4 KB) ---------- |
+      |                                                     |
+      v                                                     v
+[Salva o arquivo]                                  [Aguarda nova conexão]
+```
 ## 🚀 Como Executar
 
 Por utilizar a camada de transporte com Sockets TCP locais, a aplicação precisa ser executada em um ambiente com suporte a terminal local (VS Code, PowerShell, Terminal Linux ou GitHub Codespaces).
