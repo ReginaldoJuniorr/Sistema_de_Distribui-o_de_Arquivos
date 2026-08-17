@@ -1,9 +1,9 @@
 # **Documentação Técnica: Sistema de Distribuição de Arquivos e Diagnóstico**
 
-1. Visão Geral do Sistema
+## Visão Geral do Sistema
 O sistema consiste em uma arquitetura Cliente-Servidor desenvolvida em Python sobre o protocolo TCP/IP (camada de transporte). A aplicação simula o comportamento de uma interface de recuperação de dados (Retrieval-Augmented Generation / RAG), onde o cliente solicita relatórios em linguagem natural e o servidor responde dinamicamente gerando e transferindo arquivos com dados de diagnósticos e métricas do sistema hospedeiro.
 
-2. Arquitetura da Comunicação e Protocolo
+## Arquitetura da Comunicação e Protocolo
 Para a transferência confiável de arquivos via Sockets TCP, foi implementado um Protocolo de Cabeçalho de Tamanho Fixo (Fixed-Length Header Protocol).
 
 Funcionamento do Protocolo:
@@ -21,7 +21,7 @@ filesize: Tamanho total do arquivo em bytes.
 mensagem: Presente apenas em casos de erro.
 Carga Útil (Payload / Transmissão de Arquivo): O servidor transmite o conteúdo do arquivo em blocos binários de 4096 bytes (4 KB). O cliente lê continuamente o fluxo de dados até atingir a quantidade exata informada em filesize.
 
-3. Documentação do Código: Servidor (servidor.py)
+## Documentação do Código: Servidor (servidor.py)
 O servidor atua como o nó central de escuta (listener), responsável por processar requisições, gerar diagnósticos em tempo real e servir os arquivos.
 
 Módulos Utilizados
@@ -52,7 +52,7 @@ conn.recv(1024): Lê a mensagem enviada pelo cliente.
 
 conn.sendall(...): Garante o envio completo dos bytes de cabeçalho e dos blocos do arquivo através do buffer do sistema operacional.
 
-4. Documentação do Código: Cliente (cliente.py)
+## Documentação do Código: Cliente (cliente.py)
 O cliente atua como a interface do usuário, enviando solicitações e reconstruindo o arquivo recebido via rede no armazenamento local.
 
 Módulos Utilizados
@@ -81,8 +81,8 @@ Em um laço while, solicita ao socket a quantidade exata restante (min(4096, byt
 
 Escreve os bytes recebidos continuamente no arquivo local.
 
-5. Exemplo de Execução e Saída no Terminal
-Terminal do Servidor
+## Exemplo de Execução e Saída no Terminal
+**Terminal do Servidor**
 
 ```python
 Servidor RAG aguardando conexões em 127.0.0.1:65432...
@@ -93,7 +93,7 @@ Processando relatório...
 Arquivo relatorio_20260817_164900.txt enviado com sucesso!
 ```
 
-# Terminal do Cliente
+**Terminal do Cliente**
 
 ```python
 Digite seu pedido para o sistema: relatorio
