@@ -1,105 +1,117 @@
-# **Documentação Técnica: Sistema de Distribuição de Arquivos e Diagnóstico**
+# Documentação Técnica: Central de Telemetria e Monitoramento de Redes
 
 ## Visão Geral do Sistema
-O sistema consiste em uma arquitetura Cliente-Servidor desenvolvida em Python sobre o protocolo TCP/IP (camada de transporte). A aplicação simula o comportamento de uma interface de recuperação de dados (Retrieval-Augmented Generation / RAG), onde o cliente solicita relatórios em linguagem natural e o servidor responde dinamicamente gerando e transferindo arquivos com dados de diagnósticos e métricas do sistema hospedeiro.
+
+O sistema consiste em uma arquitetura Cliente-Servidor desenvolvida em Python sobre o protocolo TCP/IP (camada de transporte). A aplicação adota o modelo de Agente Ativo (Push Architecture), onde o cliente (cliente_agente.py) executa o diagnóstico de recursos de hardware em tempo real (CPU, RAM e Disco) e envia proativamente os relatórios para a Central de Monitoramento (servidor_central.py), que grava os dados centralizadamente para auditoria e controle de rede.
 
 ## Arquitetura da Comunicação e Protocolo
-Para a transferência confiável de arquivos via Sockets TCP, foi implementado um Protocolo de Cabeçalho de Tamanho Fixo (Fixed-Length Header Protocol).
 
-Funcionamento do Protocolo:
+Para garantir a integridade no envio dos relatórios via Sockets TCP, foi mantido o Protocolo de Cabeçalho de Tamanho Fixo (Fixed-Length Header Protocol).
 
-Solicitação: O cliente envia uma mensagem em formato de texto simples contendo a intenção.
-Cabeçalho (Header): O servidor responde primeiramente enviando uma estrutura em formato JSON codificada em UTF-8, obrigatoriamente preenchida (padded) com espaços em branco até atingir o tamanho exato de 1024 bytes.
+## Funcionamento do Protocolo:
 
-Vantagem: Evita o problema do framing no TCP, garantindo que o cliente leia primeiro os metadados antes de iniciar a leitura dos dados brutos do arquivo.
+1. Coleta e Empacotamento Local: O Agente gera o arquivo de telemetria contendo o diagnóstico de hardware e calcula os metadados (tamanho do arquivo, nome da máquina e nome do arquivo).
 
-Mapeamento do JSON no Cabeçalho:
+2. Cabeçalho (Header): O Agente inicia a transmissão enviando uma estrutura JSON codificada em UTF-8, preenchida (padded) com espaços em branco até atingir o tamanho exato de 1024 bytes.
 
-status: "sucesso" ou "erro".
-filename: Nome original do arquivo gerado.
-filesize: Tamanho total do arquivo em bytes.
-mensagem: Presente apenas em casos de erro.
-Carga Útil (Payload / Transmissão de Arquivo): O servidor transmite o conteúdo do arquivo em blocos binários de 4096 bytes (4 KB). O cliente lê continuamente o fluxo de dados até atingir a quantidade exata informada em filesize.
+   - Vantagem: Elimina o problema de framing no TCP, permitindo que a Central saiba exatamente de qual máquina veio a requisição e qual o tamanho exato do payload a ser lido antes de abrir o buffer do arquivo.
 
-## Documentação do Código: Servidor (servidor.py)
-O servidor atua como o nó central de escuta (listener), responsável por processar requisições, gerar diagnósticos em tempo real e servir os arquivos.
+3. Mapeamento do JSON no Cabeçalho:
+
+   - status: "sucesso".
+     
+   - maquina: Nome de identificação do host gerador da telemetria (platform.node()).
+     
+   - filename: Nome original do arquivo .txt gerado no cliente.
+     
+   - filesize: Tamanho total do arquivo em bytes.
+
+4. Carga Útil (Payload / Transmissão de Arquivo): O Agente transmite o arquivo de telemetria em blocos binários de 4096 bytes (4 KB). A Central lê iterativamente o fluxo até completar a quantidade exata informada em filesize e o grava em disco com o prefixo recebido_.
+
+# Documentação do Código: Central de Monitoramento (servidor_central.py)
+
+A Central atua como o nó receptor (listener), configurado para escutar requisições de qualquer interface de rede e armazenar os dados enviados pelos agentes.
+
+## Módulos Utilizados
+
+- socket: Gerenciamento da interface de rede (família AF_INET, tipo SOCK_STREAM).
+  
+- json: Desserialização do cabeçalho de metadados.
+  
+## Componentes e Fluxo do Socket
+
+- HOST = '0.0.0.0': Escuta em todas as placas de rede ativas na máquina Servidor, permitindo conexões vindas de computadores externos na mesma rede local.
+  
+- s.bind((HOST, PORT)): Vincula o socket à porta configurada (65432).
+  
+- s.listen(): Coloca o socket em modo de escuta contínua.
+  
+- s.accept(): Bloqueia a execução aguardando o envio de dados de um Agente.
+  
+- conn.recv(1024): Captura rigorosamente os 1024 bytes iniciais do cabeçalho de metadados.
+  
+- conn.recv(chunk_size): Lê a carga útil (arquivo) em blocos de até 4 KB até totalizar o filesize, escrevendo diretamente em um novo arquivo com a nomenclatura recebido_<nome_do_arquivo>.
+
+# Documentação do Código: Agente de Telemetria (cliente_agente.py)
+
+O Agente atua na ponta monitorada, realizando a leitura de hardware, gerando os relatórios de saúde do sistema e enviando-os para a Central via Socket.
 
 Módulos Utilizados
-socket: Gerenciamento da interface de rede (família AF_INET, tipo SOCK_STREAM).
 
-json: Serialização de metadados para envio.
+- socket: Abertura do canal de comunicação TCP com a Central.
+  
+- json: Serialização do cabeçalho de metadados.
+  
+- os: Leitura do tamanho do arquivo gerado (os.path.getsize).
+  
+- platform: Coleta do nome da máquina e sistema operacional.
+  
+- psutil: Módulo externo para leitura direta dos sensores de uso de CPU, Memória RAM e Disco.
+  
+- datetime: Carimbo de data e hora para versionamento do relatório.
+  
+# Funções e Componentes
 
-os: Leitura de tamanho de arquivos e manipulação do sistema de arquivos.
+## gerar_telemetria()
 
-platform: Coleta de informações sobre o hardware e SO da máquina servidor.
+- Descrição: Lê as porcentagens de uso de CPU (psutil.cpu_percent), RAM (psutil.virtual_memory().percent) e Disco (psutil.disk_usage). Aplica uma lógica de decisão: caso qualquer recurso ultrapasse 90%, define o status geral como CRÍTICO, caso contrário, ESTÁVEL. Salva esses dados em um arquivo .txt local.
 
-datetime: Registro de timestamps nos relatórios.
+- Retorno: tuple — (arquivo_path, nome_maquina).
 
-Funções e Componentes
-gerar_relatorio()
-Descrição: Função interna responsável por simular o processo de "geração/recuperação de contexto" do RAG. Ela coleta métricas do sistema operacional do servidor e escreve um arquivo de texto localmente.
+## Fluxo de Execução
 
-Retorno: str — Nome do arquivo .txt gerado no disco com carimbo de data e hora.
+1. Geração de Dados: Invoca gerar_telemetria() e calcula o tamanho final do relatório (os.path.getsize).
 
-Fluxo Principal do Socket (with socket.socket(...))
-s.bind((HOST, PORT)): Vincula o socket ao endereço IP local e à porta configurada (65432).
-
-s.listen(): Coloca o socket em modo de escuta para aguardar conexões de entrada.
-
-s.accept(): Bloqueia a execução até que um cliente se conecte, retornando o objeto de conexão (conn) e o endereço do cliente (addr).
-
-conn.recv(1024): Lê a mensagem enviada pelo cliente.
-
-conn.sendall(...): Garante o envio completo dos bytes de cabeçalho e dos blocos do arquivo através do buffer do sistema operacional.
-
-## Documentação do Código: Cliente (cliente.py)
-O cliente atua como a interface do usuário, enviando solicitações e reconstruindo o arquivo recebido via rede no armazenamento local.
-
-Módulos Utilizados
-socket: Abertura do canal de comunicação TCP.
-
-json: Desserialização do cabeçalho de resposta.
-
-Fluxo de Execução
-Estabelecimento de Conexão (s.connect((HOST, PORT))): Inicia a negociação (three-way handshake) com o servidor.
-
-Envio da Requisição (s.sendall(...)): Coleta a entrada do usuário (input) e a converte para bytes via UTF-8.
-
-Leitura e Tratamento do Cabeçalho:
-
-Executa s.recv(1024) para ler rigorosamente o bloco inicial de 1024 bytes.
-
-Aplica .strip() no texto recebido para remover os espaços de preenchimento e realiza o parse via json.loads().
-
-Reconstrução do Arquivo (Download em Chunks):
-
-Cria um novo arquivo local usando o modo de escrita binária ('wb').
-
-Mantém um acumulador bytes_recebidos.
-
-Em um laço while, solicita ao socket a quantidade exata restante (min(4096, bytes_faltantes)), garantindo que não leia mais dados do que o tamanho delimitado pelo cabeçalho.
-
-Escreve os bytes recebidos continuamente no arquivo local.
+2. Estabelecimento de Conexão (s.connect((HOST, PORT))): Conecta-se à Central de Monitoramento.
+  
+4. Envio do Cabeçalho Padded: Converte o dicionário com os metadados em JSON, preenche com espaços (.ljust(1024)) e transmite via s.sendall().
+  
+5. Transmissão em Chunks: Abre o arquivo de telemetria em modo leitura binária ('rb'), lê blocos de 4 KB e transmite sequencialmente pelo socket até o encerramento do arquivo.
 
 ## Exemplo de Execução e Saída no Terminal
-**Terminal do Servidor**
 
-```python
-Servidor RAG aguardando conexões em 127.0.0.1:65432...
+### Terminal do Servidor Central (servidor_central.py)
 
-[+] Nova conexão de ('127.0.0.1', 54321)
-Comando recebido do cliente: 'relatorio'
-Processando relatório...
-Arquivo relatorio_20260817_164900.txt enviado com sucesso!
+
+```
+==================================================
+ INOVAÇÃO DO GRUPO: Central de Monitoramento Ativa
+ Aguardando relatórios de telemetria de outras máquinas...
+==================================================
+
+[+] Conexão recebida da máquina: 192.168.1.15
+    -> Recebendo relatório de: NOTEBOOK-SERGIO
+    -> Tamanho do arquivo: 342 bytes
+[OK] Relatório da máquina 'NOTEBOOK-SERGIO' salvo como 'recebido_telemetria_NOTEBOOK-SERGIO_20260901_170000.txt'
+
 ```
 
-**Terminal do Cliente**
+### Terminal do Cliente Agente (cliente_agente.py)
 
-```python
-Digite seu pedido para o sistema: relatorio
 
-[+] Arquivo encontrado: relatorio_20260817_164900.txt (285 bytes)
-Baixando arquivo...
-
-[OK] Download concluído! Arquivo salvo como: recebido_pelo_cliente_relatorio_20260817_164900.txt
+```
+Coletando informações de hardware...
+Conectando à Central de Monitoramento (192.168.1.10:65432)...
+Enviando relatório de telemetria...
+[OK] Dados enviados com sucesso!
 ```
